@@ -18,8 +18,24 @@
                     <suiteXmlFiles>
                         <suiteXmlFile>testng.xml</suiteXmlFile>
                     </suiteXmlFiles>
+                    <systemPropertyVariables>
+<!--This tells Allure to store its execution data in target/allure-results instead of scattering generated files across your project.-->
+                        <allure.results.directory>
+                            ${project.build.directory}/allure-results
+                        </allure.results.directory>
+                        <java.util.logging.config.file>
+                            ${project.basedir}/src/main/resources/logging.properties
+                        </java.util.logging.config.file>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-maven</artifactId>
+                <version>3.1.0</version>
+            </plugin>
+
         </plugins>
     </build>
 
@@ -39,5 +55,11 @@
             <artifactId>playwright</artifactId>
             <version>1.55.0</version>
         </dependency>
+        <dependency>
+            <groupId>io.qameta.allure</groupId>
+            <artifactId>allure-testng</artifactId>
+            <version>2.29.1</version>
+        </dependency>
+
     </dependencies>
 </project>

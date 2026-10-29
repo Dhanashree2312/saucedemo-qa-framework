@@ -29,11 +29,15 @@ jobs:
       - name: Run TestNG suite
         run: mvn clean test
 
-      - name: Upload test reports
+
+      - name: Upload test reports and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: surefire-test-reports
-          path: target/surefire-reports/
+          name: saucedemo-test-artifacts
+          path: |
+            target/surefire-reports/
+            target/allure-results/
+            logs/automation.log
           if-no-files-found: warn
           retention-days: 14

@@ -2,6 +2,8 @@ package com.qa.tests.ui;
 
 import com.qa.framework.config.ConfigManager;
 import com.qa.framework.pages.LoginPage;
+import io.qameta.allure.Allure;
+import io.qameta.allure.Description;
 import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -21,24 +23,40 @@ public class LoginTest extends BaseTest {
     }
 
     @Test(dataProvider = "loginUsers")
+    @Description("Verify login behavior for different SauceDemo users")
     public void loginTest(
             String username,
             String password,
             boolean expectedSuccess) {
 
-        // 1. Open SauceDemo
-        page.navigate(ConfigManager.getProperty("base_url"));
-        // 2. Create LoginPage
+        Allure.step("Open SauceDemo Page",()->{
+            page.navigate(ConfigManager.getProperty("base_url"));
+        });
+
         LoginPage loginpage = new LoginPage(page);
-        // 3. Call login(username, password)
-        loginpage.login(username, password);
-        // 4. Verify the expected outcome
-        Boolean actualResult = page.url().contains("/inventory.html");
-        Assert.assertEquals(actualResult,expectedSuccess,
-                "Login outcome did not match the expected result for:"+username);
+
+        Allure.step("Enter credentials and click on login",()->{loginpage.login(username, password);});
+
+        Allure.step("Verify login outcome", () -> {
+            boolean actualResult =
+                    page.url().contains("/inventory.html");
+
+            Assert.assertEquals(
+                    actualResult,
+                    expectedSuccess,
+                    "Login outcome did not match expected result for: "
+                            + username
+            );
+        });
+
         if(!expectedSuccess){
-            Assert.assertTrue(page.locator("[data-test='error']").isVisible(),
-                    "Expected error login message for locked user:"+username);
+            Allure.step("Verify locked error message when logged in with locked user:",
+                    ()->
+                    {
+                        Assert.assertTrue(page.locator("[data-test='error']").isVisible(),
+                                "Expected error login message for locked user:"+username);
+                    });
+
         }
     }
 }

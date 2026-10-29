@@ -1,3 +1,4 @@
+
 name: SauceDemo QA Automation
 
 on:
@@ -26,9 +27,15 @@ jobs:
       - name: Install Playwright browser dependencies
         run: mvn exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
 
+      - name: Prepare log directory
+        run: mkdir -p logs
+
       - name: Run TestNG suite
         run: mvn clean test
 
+      - name: Generate Allure HTML report
+        if: always()
+        run: mvn allure:report
 
       - name: Upload test reports and logs
         if: always()
@@ -38,6 +45,7 @@ jobs:
           path: |
             target/surefire-reports/
             target/allure-results/
+            target/site/allure-maven-plugin/
             logs/automation.log
           if-no-files-found: warn
           retention-days: 14

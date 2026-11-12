@@ -2,38 +2,72 @@ package com.qa.framework.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 import java.util.Properties;
 
 public class ConfigManager {
 
-    private static final Properties properties = new Properties();
-    static{try(InputStream input = ConfigManager.class.getResourceAsStream("/config/qa.properties"))
+    private static final String ENVIRONMENT =
+            System.getProperty("env", "qa")
+                    .trim()
+                    .toLowerCase(Locale.ROOT);
 
-    {
-        if (input == null) {
-            throw new RuntimeException("Sorry, I'm unable to locate qa.properties file");
-        }
-        properties.load(input);
-    }catch(
-    IOException e){
-        throw new RuntimeException(
-                "Failed to load config.properties",
-                e
-        );
+    private static final Properties frameworkProperties =
+            loadProperties("/config/framework.properties");
 
+    private static final Properties environmentProperties =
+            loadProperties(
+                    "/config/environments/" + ENVIRONMENT + ".properties"
+            );
+
+    private ConfigManager() {
+        // Prevent object creation; all configuration methods are static.
     }
-}
-    public static String getProperty(String key){
-        String value = properties.getProperty(key);
-        if(value ==null || value.isBlank()){
+
+    private static Properties loadProperties(String path) {
+        Properties loadedProperties = new Properties();
+
+        try (InputStream input =
+                     ConfigManager.class.getResourceAsStream(path)) {
+
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Unable to locate configuration file: " + path
+                );
+            }
+
+            loadedProperties.load(input);
+            return loadedProperties;
+
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to load configuration file: " + path,
+                    e
+            );
+        }
+    }
+
+    public static String getProperty(String key) {
+        // Environment-specific values take priority.
+        String value = environmentProperties.getProperty(key);
+
+        // Fall back to shared framework settings.
+        if (value == null || value.isBlank()) {
+            value = frameworkProperties.getProperty(key);
+        }
+
+        if (value == null || value.isBlank()) {
             throw new IllegalStateException(
                     "Missing or blank configuration property: " + key
-            );        }
+            );
+        }
+
         return value.trim();
     }
 
-    public static Boolean getBooleanProperty(String key){
+    public static boolean getBooleanProperty(String key) {
         String value = getProperty(key);
+
         if (!value.equalsIgnoreCase("true")
                 && !value.equalsIgnoreCase("false")) {
             throw new IllegalStateException(
@@ -41,6 +75,7 @@ public class ConfigManager {
                             + "' must be true or false"
             );
         }
+
         return Boolean.parseBoolean(value);
     }
 
@@ -68,4 +103,36 @@ public class ConfigManager {
         }
     }
 
+    public static String getBrowser() {
+        String browser = System.getProperty("browser", "chromium")
+                .trim()
+                .toLowerCase(Locale.ROOT);
+
+        if (!browser.equals("chromium")
+                && !browser.equals("firefox")
+                && !browser.equals("webkit")) {
+            throw new IllegalArgumentException(
+                    "Unsupported browser: " + browser
+            );
+        }
+
+        return browser;
+    }
+
+    public static boolean isHeadless() {
+        String headless = System.getProperty("headless", "true").trim();
+
+        if (!headless.equalsIgnoreCase("true")
+                && !headless.equalsIgnoreCase("false")) {
+            throw new IllegalArgumentException(
+                    "Headless value must be either true or false"
+            );
+        }
+
+        return Boolean.parseBoolean(headless);
+    }
+
+    public static String getEnvironment() {
+        return ENVIRONMENT;
+    }
 }

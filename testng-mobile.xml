@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+
+<suite name="Complete Appium Mobile Suite"
+       parallel="false"
+       preserve-order="true">
+
+    <test name="Mobile Browser Tests">
+
+        <classes>
+            <class name="com.qa.tests.mobile.MobileInventoryTest"/>
+            <class name="com.qa.tests.mobile.MobileCartTest"/>
+            <class name="com.qa.tests.mobile.MobileCheckoutTest"/>
+        </classes>
+
+    </test>
+
+    <test name="Native Android Tests">
+
+        <classes>
+            <class name="com.qa.tests.mobile.NativeAppLaunchTest"/>
+            <class name="com.qa.tests.mobile.NativeAppEndToEndTest"/>
+        </classes>
+
+    </test>
+
+</suite>

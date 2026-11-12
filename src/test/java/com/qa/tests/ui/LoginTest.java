@@ -5,58 +5,55 @@ import com.qa.framework.pages.LoginPage;
 import io.qameta.allure.Allure;
 import io.qameta.allure.Description;
 import org.testng.Assert;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 public class LoginTest extends BaseTest {
 
-    @DataProvider(name = "loginUsers")
-    public Object[][] loginUsers() {
-        return new Object[][] {
-                {"standard_user", "secret_sauce", true},
-                {"locked_out_user", "secret_sauce", false},
-                {"problem_user", "secret_sauce", true},
-                {"performance_glitch_user", "secret_sauce", true},
-                {"error_user", "secret_sauce", true},
-                {"visual_user", "secret_sauce", true}
-        };
-    }
-
-    @Test(dataProvider = "loginUsers")
-    @Description("Verify login behavior for different SauceDemo users")
+    @Test(
+            dataProvider = "loginData",
+            dataProviderClass = LoginDataProvider.class,
+            groups = {"smoke"}
+    )
+    @Description("Verify login behavior using test data from Excel or AWS S3")
     public void loginTest(
+            String testCaseId,
             String username,
             String password,
-            boolean expectedSuccess) {
+            String expectedResult) {
 
-        Allure.step("Open SauceDemo Page",()->{
+        boolean expectedSuccess = expectedResult.equalsIgnoreCase("SUCCESS");
+
+        Allure.step("Open SauceDemo Page", () -> {
             page.navigate(ConfigManager.getProperty("base_url"));
         });
 
-        LoginPage loginpage = new LoginPage(page);
+        LoginPage loginPage = new LoginPage(page);
 
-        Allure.step("Enter credentials and click on login",()->{loginpage.login(username, password);});
+        Allure.step("Enter credentials and click on login", () -> {
+            loginPage.login(username, password);
+        });
 
         Allure.step("Verify login outcome", () -> {
-            boolean actualResult =
-                    page.url().contains("/inventory.html");
+
+            boolean actualResult = page.url().contains("/inventory.html");
 
             Assert.assertEquals(
                     actualResult,
                     expectedSuccess,
-                    "Login outcome did not match expected result for: "
-                            + username
+                    "Login outcome did not match for test case: " + testCaseId
+                            + ", username: " + username
             );
         });
 
-        if(!expectedSuccess){
-            Allure.step("Verify locked error message when logged in with locked user:",
-                    ()->
-                    {
-                        Assert.assertTrue(page.locator("[data-test='error']").isVisible(),
-                                "Expected error login message for locked user:"+username);
-                    });
+        if (!expectedSuccess) {
 
+            Allure.step("Verify error message for unsuccessful login", () -> {
+
+                Assert.assertTrue(
+                        page.locator("[data-test='error']").isVisible(),
+                        "Expected login error message for: " + username
+                );
+            });
         }
     }
 }

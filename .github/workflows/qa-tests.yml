@@ -10,7 +10,7 @@ on:
 jobs:
   ui-tests:
     name: Run UI Automation Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: read
@@ -82,7 +82,7 @@ jobs:
 
   api-tests:
     name: Run API Automation Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: read

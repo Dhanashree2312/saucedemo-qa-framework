@@ -1,3 +1,4 @@
+
 name: SauceDemo QA Automation
 
 on:
@@ -33,20 +34,36 @@ jobs:
       - name: Prepare log directory
         run: mkdir -p logs
 
-      # AWS access only for non-PR runs (main branch)
+      # TEMPORARY DIAGNOSTIC: Inspect GitHub OIDC identity claims
+      - name: Inspect GitHub OIDC claims
+        if: github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64').toString('utf8')
+            );
+
+            core.info(`OIDC issuer: ${claims.iss}`);
+            core.info(`OIDC audience: ${JSON.stringify(claims.aud)}`);
+            core.info(`OIDC subject: ${claims.sub}`);
+
+      # AWS authentication only for non-PR runs
       - name: Configure AWS credentials
         if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       # Pull requests use local test data
       - name: Run UI tests with local test data
         if: github.event_name == 'pull_request'
         run: mvn clean test
 
-      # Main branch and manual runs use test data from S3
+      # Main branch and manual runs use S3 test data
       - name: Run UI tests with S3 test data
         if: github.event_name != 'pull_request'
         run: mvn clean test "-Dtestdata.source=s3"
@@ -99,6 +116,21 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # TEMPORARY DIAGNOSTIC: Inspect GitHub OIDC identity claims
+      - name: Inspect GitHub OIDC claims
+        if: github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64').toString('utf8')
+            );
+
+            core.info(`OIDC issuer: ${claims.iss}`);
+            core.info(`OIDC audience: ${JSON.stringify(claims.aud)}`);
+            core.info(`OIDC subject: ${claims.sub}`);
+
       - name: Run API TestNG suite
         run: mvn clean test "-Dsurefire.suiteXmlFiles=testng-api.xml"
 
@@ -106,13 +138,14 @@ jobs:
         if: always()
         run: mvn allure:report
 
-      # AWS access is needed only for uploading reports
+      # AWS authentication only for non-PR runs
       - name: Configure AWS credentials
         if: always() && github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       - name: Upload API reports to S3
         if: always() && github.event_name != 'pull_request'

@@ -172,7 +172,7 @@ jobs:
           path: |
             target/allure-results/
             target/site/allure-maven-plugin/
-            target/reports/
+            target/surefire-reports/
             appium.log
           if-no-files-found: warn
           retention-days: 7

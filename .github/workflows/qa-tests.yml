@@ -1,5 +1,5 @@
 
-name: SauceDemo QA Automation
+name: SauceDemo Complete QA Automation
 
 on:
   push:
@@ -13,13 +13,10 @@ permissions:
   id-token: write
 
 jobs:
-
-  # ==========================================
-  # UI AUTOMATION JOB
-  # ==========================================
-  ui-tests:
-    name: Run UI Automation Tests
+  complete-qa-suite:
+    name: Web + API + Mobile Automation
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -32,18 +29,29 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # Install all browser engines and Linux dependencies
-      - name: Install Playwright browser dependencies
-        run: >
-          mvn exec:java
-          -Dexec.mainClass=com.microsoft.playwright.CLI
-          -Dexec.args="install --with-deps chromium firefox webkit"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-      - name: Prepare log directory
-        run: mkdir -p logs
+      - name: Install Playwright browsers
+        run: |
+          mvn exec:java \
+            -Dexec.mainClass=com.microsoft.playwright.CLI \
+            -Dexec.args="install --with-deps chromium firefox webkit"
 
-      # AWS authentication using GitHub OIDC
-      - name: Configure AWS credentials
+      - name: Install Appium and UiAutomator2
+        run: |
+          npm install --global appium@3.9.0
+          appium driver install uiautomator2
+          appium driver list --installed
+
+      - name: Initialize execution status
+        run: |
+          echo "TEST_EXIT_CODE=1" >> "$GITHUB_ENV"
+          echo "ALLURE_EXIT_CODE=1" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials using OIDC
         if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -51,119 +59,92 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           audience: sts.amazonaws.com
 
-      # Pull requests use local test data
-      - name: Run UI tests with local test data
-        if: github.event_name == 'pull_request'
-        run: mvn clean test
+      - name: Run complete QA suite on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
 
-      # Main branch and manual runs use S3 test data
-      - name: Run UI tests with S3 test data
-        if: github.event_name != 'pull_request'
-        run: mvn clean test "-Dtestdata.source=s3"
+          script: |
+            echo "Starting Appium server..."
 
-      # Generate Allure HTML report
-      - name: Generate UI Allure HTML report
+            appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 &
+
+            APPIUM_READY=0
+
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4723/status > /dev/null; then
+                APPIUM_READY=1
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "$APPIUM_READY" -ne 1 ]; then
+              echo "Appium server failed to start."
+              cat appium.log
+              exit 1
+            fi
+
+            echo "Appium server is ready."
+
+            set +e
+
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              mvn clean test
+            else
+              mvn clean test "-Dtestdata.source=s3"
+            fi
+
+            TEST_EXIT_CODE=$?
+
+            set -e
+
+            echo "Test exit code: $TEST_EXIT_CODE"
+            echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> "$GITHUB_ENV"
+
+      - name: Generate Allure HTML report
         if: always()
-        run: mvn allure:report
+        run: |
+          set +e
 
-      # Upload historical UI report and results
-      - name: Upload UI reports to S3
+          mvn -q allure:report
+
+          ALLURE_EXIT_CODE=$?
+
+          echo "Allure exit code: $ALLURE_EXIT_CODE"
+          echo "ALLURE_EXIT_CODE=$ALLURE_EXIT_CODE" >> "$GITHUB_ENV"
+
+          exit 0
+
+      - name: Upload execution artifacts to S3
         if: always() && github.event_name != 'pull_request'
         run: |
-          REPORT_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/${{ github.run_id }}/${{ github.run_attempt }}/ui"
-          LATEST_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/latest/ui"
+          echo "Uploading execution artifacts..."
 
-          if [ -f target/site/allure-maven-plugin/index.html ]; then
-            aws s3 sync target/site/allure-maven-plugin/ \
-              "$REPORT_PATH/html/" \
-              --no-progress
+          mvn -q -DskipTests test-compile exec:java \
+            "-Dexec.mainClass=com.qa.tests.reporting.CloudArtifactUploader" \
+            "-Dexec.classpathScope=test" \
+            "-Dexec.args=${{ github.run_id }}-${{ github.run_attempt }} ${TEST_EXIT_CODE}"
 
-            aws s3 sync target/site/allure-maven-plugin/ \
-              "$LATEST_PATH/html/" \
-              --delete \
-              --no-progress
-          else
-            echo "UI Allure HTML report was not generated."
-          fi
-
-          if [ -d target/allure-results ]; then
-            aws s3 sync target/allure-results/ \
-              "$REPORT_PATH/allure-results/" \
-              --no-progress
-
-            aws s3 sync target/allure-results/ \
-              "$LATEST_PATH/allure-results/" \
-              --delete \
-              --no-progress
-          else
-            echo "UI Allure results directory was not generated."
-          fi
-
-  # ==========================================
-  # API AUTOMATION JOB
-  # ==========================================
-  api-tests:
-    name: Run API Automation Tests
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      # Execute API TestNG suite
-      - name: Run API TestNG suite
-        run: mvn clean test "-Dsurefire.suiteXmlFiles=testng-api.xml"
-
-      # Generate API Allure HTML report
-      - name: Generate API Allure HTML report
+      - name: Final execution status
         if: always()
-        run: mvn allure:report
-
-      # Configure AWS credentials using OIDC
-      - name: Configure AWS credentials
-        if: always() && github.event_name != 'pull_request'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          audience: sts.amazonaws.com
-
-      # Upload historical API report and results
-      - name: Upload API reports to S3
-        if: always() && github.event_name != 'pull_request'
         run: |
-          REPORT_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/${{ github.run_id }}/${{ github.run_attempt }}/api"
-          LATEST_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/latest/api"
+          echo "Test exit code: $TEST_EXIT_CODE"
+          echo "Allure exit code: $ALLURE_EXIT_CODE"
 
-          if [ -f target/site/allure-maven-plugin/index.html ]; then
-            aws s3 sync target/site/allure-maven-plugin/ \
-              "$REPORT_PATH/html/" \
-              --no-progress
-
-            aws s3 sync target/site/allure-maven-plugin/ \
-              "$LATEST_PATH/html/" \
-              --delete \
-              --no-progress
-          else
-            echo "API Allure HTML report was not generated."
+          if [ "$TEST_EXIT_CODE" -ne 0 ]; then
+            echo "QA tests failed."
+            exit 1
           fi
 
-          if [ -d target/allure-results ]; then
-            aws s3 sync target/allure-results/ \
-              "$REPORT_PATH/allure-results/" \
-              --no-progress
-
-            aws s3 sync target/allure-results/ \
-              "$LATEST_PATH/allure-results/" \
-              --delete \
-              --no-progress
-          else
-            echo "API Allure results directory was not generated."
+          if [ "$ALLURE_EXIT_CODE" -ne 0 ]; then
+            echo "Allure report generation failed."
+            exit 1
           fi
+
+          echo "Complete QA execution successful."

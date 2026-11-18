@@ -4,8 +4,10 @@ name: SauceDemo Complete QA Automation
 on:
   push:
     branches: [main]
+
   pull_request:
     branches: [main]
+
   workflow_dispatch:
 
 permissions:
@@ -18,7 +20,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
+    env:
+      TESTDATA_SOURCE: ${{ github.event_name == 'pull_request' && 'local' || 's3' }}
+
     steps:
+      # --------------------------------------------------
+      # 1. CHECKOUT AND JAVA SETUP
+      # --------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -29,10 +38,9 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+      # --------------------------------------------------
+      # 2. PLAYWRIGHT SETUP
+      # --------------------------------------------------
 
       - name: Install Playwright browsers
         run: |
@@ -40,16 +48,33 @@ jobs:
             -Dexec.mainClass=com.microsoft.playwright.CLI \
             -Dexec.args="install --with-deps chromium firefox webkit"
 
+      # --------------------------------------------------
+      # 3. APPIUM SETUP
+      # --------------------------------------------------
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install Appium and UiAutomator2
         run: |
           npm install --global appium@3.9.0
           appium driver install uiautomator2
           appium driver list --installed
 
+      # --------------------------------------------------
+      # 4. INITIALIZE EXECUTION STATUS
+      # --------------------------------------------------
+
       - name: Initialize execution status
         run: |
           echo "TEST_EXIT_CODE=1" >> "$GITHUB_ENV"
           echo "ALLURE_EXIT_CODE=1" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 5. AWS OIDC AUTHENTICATION
+      # --------------------------------------------------
 
       - name: Configure AWS credentials using OIDC
         if: github.event_name != 'pull_request'
@@ -59,6 +84,9 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           audience: sts.amazonaws.com
 
+      # --------------------------------------------------
+      # 6. START ANDROID EMULATOR + RUN COMPLETE SUITE
+      # --------------------------------------------------
 
       - name: Run complete QA suite on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -69,37 +97,64 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
+
           script: |
+            echo "Starting Appium server..."
+
             appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 &
-            curl --retry 30 --retry-delay 2 --retry-connrefused --max-time 5 -fsS http://127.0.0.1:4723/status
+
+            echo "Waiting for Appium server..."
+
+            curl --retry 30 \
+              --retry-delay 2 \
+              --retry-connrefused \
+              --max-time 5 \
+              -fsS http://127.0.0.1:4723/status
+
+            echo "Appium server is ready."
+
+            echo "Test data source: $TESTDATA_SOURCE"
 
             set +e
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              mvn clean test
-            else
-              mvn clean test "-Dtestdata.source=s3"
-            fi
+
+            mvn clean test "-Dtestdata.source=$TESTDATA_SOURCE"
+
             TEST_EXIT_CODE=$?
+
             set -e
 
+            echo "Test execution exit code: $TEST_EXIT_CODE"
+
             echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> "$GITHUB_ENV"
+
             exit 0
-      
+
+      # --------------------------------------------------
+      # 7. GENERATE ALLURE HTML REPORT
+      # --------------------------------------------------
 
       - name: Generate Allure HTML report
         if: always()
         run: |
+          echo "Generating Allure HTML report..."
+
           set +e
 
           mvn -q allure:report
 
           ALLURE_EXIT_CODE=$?
 
-          echo "Allure exit code: $ALLURE_EXIT_CODE"
+          set -e
+
+          echo "Allure report exit code: $ALLURE_EXIT_CODE"
+
           echo "ALLURE_EXIT_CODE=$ALLURE_EXIT_CODE" >> "$GITHUB_ENV"
 
           exit 0
 
+      # --------------------------------------------------
+      # 8. UPLOAD EXECUTION ARTIFACTS TO AWS S3
+      # --------------------------------------------------
 
       - name: Upload execution artifacts to S3
         if: always() && github.event_name != 'pull_request'
@@ -118,11 +173,34 @@ jobs:
             com.qa.tests.reporting.CloudArtifactUploader \
             "${{ github.run_id }}-${{ github.run_attempt }}" \
             "$TEST_EXIT_CODE"
-      
+
+      # --------------------------------------------------
+      # 9. UPLOAD GITHUB ARTIFACTS FOR EASY DOWNLOAD
+      # --------------------------------------------------
+
+      - name: Upload Allure report as GitHub artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ github.run_id }}
+          path: |
+            target/allure-results/
+            target/site/allure-maven-plugin/
+            appium.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      # --------------------------------------------------
+      # 10. FINAL EXECUTION STATUS
+      # --------------------------------------------------
 
       - name: Final execution status
         if: always()
         run: |
+          echo "----------------------------------"
+          echo "QA EXECUTION SUMMARY"
+          echo "----------------------------------"
+
           echo "Test exit code: $TEST_EXIT_CODE"
           echo "Allure exit code: $ALLURE_EXIT_CODE"
 

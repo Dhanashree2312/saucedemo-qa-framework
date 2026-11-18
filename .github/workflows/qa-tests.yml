@@ -54,11 +54,13 @@ jobs:
       # --------------------------------------------------
       # 4. Install Playwright browsers
       # --------------------------------------------------
-      - name: Install Playwright browsers
+
+      - name: Install Playwright browsers and Linux dependencies
         run: |
           mvn -B exec:java \
             -Dexec.mainClass=com.microsoft.playwright.CLI \
-            -Dexec.args="install --with-deps chromium"
+            -Dexec.args="install --with-deps chromium firefox webkit"
+      
 
       # --------------------------------------------------
       # 5. Install Appium and Android driver

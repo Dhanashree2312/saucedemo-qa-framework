@@ -1,36 +1,41 @@
 
-name: SauceDemo Complete QA Automation
+name: SauceDemo QA Automation
 
 on:
   push:
     branches: [main]
-
   pull_request:
     branches: [main]
-
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: saucedemo-qa-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   complete-qa-suite:
-    name: Web + API + Mobile Automation
+    name: Complete Web API and Mobile QA Suite
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     env:
       TESTDATA_SOURCE: ${{ github.event_name == 'pull_request' && 'local' || 's3' }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
 
     steps:
       # --------------------------------------------------
-      # 1. CHECKOUT AND JAVA SETUP
+      # 1. Checkout source code
       # --------------------------------------------------
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --------------------------------------------------
+      # 2. Configure Java and Maven
+      # --------------------------------------------------
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
@@ -39,179 +44,154 @@ jobs:
           cache: maven
 
       # --------------------------------------------------
-      # 2. PLAYWRIGHT SETUP
+      # 3. Configure Node.js for Appium
       # --------------------------------------------------
-
-      - name: Install Playwright browsers
-        run: |
-          mvn exec:java \
-            -Dexec.mainClass=com.microsoft.playwright.CLI \
-            -Dexec.args="install --with-deps chromium firefox webkit"
-
-      # --------------------------------------------------
-      # 3. APPIUM SETUP
-      # --------------------------------------------------
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Install Appium and UiAutomator2
+      # --------------------------------------------------
+      # 4. Install Playwright browsers
+      # --------------------------------------------------
+      - name: Install Playwright browsers
+        run: |
+          mvn -B exec:java \
+            -Dexec.mainClass=com.microsoft.playwright.CLI \
+            -Dexec.args="install --with-deps chromium"
+
+      # --------------------------------------------------
+      # 5. Install Appium and Android driver
+      # --------------------------------------------------
+      - name: Install Appium
         run: |
           npm install --global appium@3.9.0
           appium driver install uiautomator2
+          appium --version
           appium driver list --installed
 
       # --------------------------------------------------
-      # 4. INITIALIZE EXECUTION STATUS
+      # 6. Configure AWS credentials using GitHub OIDC
       # --------------------------------------------------
-
-      - name: Initialize execution status
-        run: |
-          echo "TEST_EXIT_CODE=1" >> "$GITHUB_ENV"
-          echo "ALLURE_EXIT_CODE=1" >> "$GITHUB_ENV"
-
-      # --------------------------------------------------
-      # 5. AWS OIDC AUTHENTICATION
-      # --------------------------------------------------
-
-      - name: Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
         if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          audience: sts.amazonaws.com
+          aws-region: ${{ env.AWS_REGION }}
 
       # --------------------------------------------------
-      # 6. START ANDROID EMULATOR + RUN COMPLETE SUITE
+      # 7. Verify AWS access
       # --------------------------------------------------
+      - name: Verify AWS identity
+        if: github.event_name != 'pull_request'
+        run: |
+          aws sts get-caller-identity
 
+      # --------------------------------------------------
+      # 8. Run complete suite on Android emulator
+      # --------------------------------------------------
       - name: Run complete QA suite on Android emulator
+        id: run-tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim
+
+          emulator-boot-timeout: 1200
+          cores: 2
+          ram-size: 2048M
+          heap-size: 512M
+
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -no-snapshot
+            -noaudio
+            -no-boot-anim
+            -camera-back none
+            -camera-front none
+
           disable-animations: true
 
           script: |
             echo "Starting Appium server..."
-
             appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 &
 
             echo "Waiting for Appium server..."
-
-            curl --retry 30 \
-              --retry-delay 2 \
-              --retry-connrefused \
-              --max-time 5 \
-              -fsS http://127.0.0.1:4723/status
+            curl --retry 30 --retry-delay 2 --retry-connrefused --max-time 5 -fsS http://127.0.0.1:4723/status
 
             echo "Appium server is ready."
-
             echo "Test data source: $TESTDATA_SOURCE"
 
-            set +e
-
-            mvn clean test "-Dtestdata.source=$TESTDATA_SOURCE"
-
-            TEST_EXIT_CODE=$?
-
-            set -e
-
-            echo "Test execution exit code: $TEST_EXIT_CODE"
-
-            echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> "$GITHUB_ENV"
-
-            exit 0
+            mvn -B clean test "-Dtestdata.source=$TESTDATA_SOURCE"
 
       # --------------------------------------------------
-      # 7. GENERATE ALLURE HTML REPORT
+      # 9. Generate Allure HTML report
       # --------------------------------------------------
-
       - name: Generate Allure HTML report
+        id: allure-report
         if: always()
         run: |
-          echo "Generating Allure HTML report..."
-
-          set +e
-
-          mvn -q allure:report
-
-          ALLURE_EXIT_CODE=$?
-
-          set -e
-
-          echo "Allure report exit code: $ALLURE_EXIT_CODE"
-
-          echo "ALLURE_EXIT_CODE=$ALLURE_EXIT_CODE" >> "$GITHUB_ENV"
-
-          exit 0
+          mvn -B -q allure:report
 
       # --------------------------------------------------
-      # 8. UPLOAD EXECUTION ARTIFACTS TO AWS S3
+      # 10. Prepare Java classpath for S3 uploader
       # --------------------------------------------------
-
-      - name: Upload execution artifacts to S3
+      - name: Build uploader runtime classpath
+        id: uploader-classpath
         if: always() && github.event_name != 'pull_request'
         run: |
-          echo "Building test classpath..."
+          mvn -B -q -DskipTests test-compile dependency:build-classpath -Dmdep.outputFile=target/runtime-classpath.txt
 
-          mvn -q test-compile dependency:build-classpath \
-            "-Dmdep.outputFile=target/test-classpath.txt" \
-            "-DincludeScope=test"
+      # --------------------------------------------------
+      # 11. Upload execution artifacts to S3
+      # --------------------------------------------------
+      - name: Upload execution artifacts to S3
+        if: always() && github.event_name != 'pull_request' && steps.uploader-classpath.outcome == 'success'
+        run: |
+          TEST_STATUS="${{ steps.run-tests.outcome == 'success' && '0' || '1' }}"
 
-          CP=$(cat target/test-classpath.txt)
-
-          echo "Launching artifact uploader..."
-
-          java -cp "target/test-classes:target/classes:$CP" \
+          java -cp "target/test-classes:target/classes:$(cat target/runtime-classpath.txt)" \
             com.qa.tests.reporting.CloudArtifactUploader \
             "${{ github.run_id }}-${{ github.run_attempt }}" \
-            "$TEST_EXIT_CODE"
+            "$TEST_STATUS"
 
       # --------------------------------------------------
-      # 9. UPLOAD GITHUB ARTIFACTS FOR EASY DOWNLOAD
+      # 12. Upload GitHub execution artifacts
       # --------------------------------------------------
-
-      - name: Upload Allure report as GitHub artifact
+      - name: Upload GitHub execution artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-${{ github.run_id }}
+          name: saucedemo-qa-execution-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             target/allure-results/
             target/site/allure-maven-plugin/
+            target/reports/
             appium.log
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
 
       # --------------------------------------------------
-      # 10. FINAL EXECUTION STATUS
+      # 13. Final execution status
       # --------------------------------------------------
-
-      - name: Final execution status
+      - name: Validate final execution status
         if: always()
         run: |
-          echo "----------------------------------"
-          echo "QA EXECUTION SUMMARY"
-          echo "----------------------------------"
+          echo "Test execution status: ${{ steps.run-tests.outcome }}"
+          echo "Allure report status: ${{ steps.allure-report.outcome }}"
 
-          echo "Test exit code: $TEST_EXIT_CODE"
-          echo "Allure exit code: $ALLURE_EXIT_CODE"
-
-          if [ "$TEST_EXIT_CODE" -ne 0 ]; then
-            echo "QA tests failed."
+          if [[ "${{ steps.run-tests.outcome }}" != "success" ]]; then
+            echo "QA test execution failed."
             exit 1
           fi
 
-          if [ "$ALLURE_EXIT_CODE" -ne 0 ]; then
+          if [[ "${{ steps.allure-report.outcome }}" != "success" ]]; then
             echo "Allure report generation failed."
             exit 1
           fi
 
-          echo "Complete QA execution successful."
+          echo "Complete QA execution and Allure report generation succeeded."

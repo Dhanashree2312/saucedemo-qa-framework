@@ -59,6 +59,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           audience: sts.amazonaws.com
 
+
       - name: Run complete QA suite on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -68,44 +69,22 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
-
           script: |
-            echo "Starting Appium server..."
-
             appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 &
-
-            APPIUM_READY=0
-
-            for i in $(seq 1 30); do
-              if curl -fsS http://127.0.0.1:4723/status > /dev/null; then
-                APPIUM_READY=1
-                break
-              fi
-              sleep 2
-            done
-
-            if [ "$APPIUM_READY" -ne 1 ]; then
-              echo "Appium server failed to start."
-              cat appium.log
-              exit 1
-            fi
-
-            echo "Appium server is ready."
+            curl --retry 30 --retry-delay 2 --retry-connrefused --max-time 5 -fsS http://127.0.0.1:4723/status
 
             set +e
-
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               mvn clean test
             else
               mvn clean test "-Dtestdata.source=s3"
             fi
-
             TEST_EXIT_CODE=$?
-
             set -e
 
-            echo "Test exit code: $TEST_EXIT_CODE"
             echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> "$GITHUB_ENV"
+            exit 0
+      
 
       - name: Generate Allure HTML report
         if: always()
@@ -121,15 +100,25 @@ jobs:
 
           exit 0
 
+
       - name: Upload execution artifacts to S3
         if: always() && github.event_name != 'pull_request'
         run: |
-          echo "Uploading execution artifacts..."
+          echo "Building test classpath..."
 
-          mvn -q -DskipTests test-compile exec:java \
-            "-Dexec.mainClass=com.qa.tests.reporting.CloudArtifactUploader" \
-            "-Dexec.classpathScope=test" \
-            "-Dexec.args=${{ github.run_id }}-${{ github.run_attempt }} ${TEST_EXIT_CODE}"
+          mvn -q test-compile dependency:build-classpath \
+            "-Dmdep.outputFile=target/test-classpath.txt" \
+            "-DincludeScope=test"
+
+          CP=$(cat target/test-classpath.txt)
+
+          echo "Launching artifact uploader..."
+
+          java -cp "target/test-classes:target/classes:$CP" \
+            com.qa.tests.reporting.CloudArtifactUploader \
+            "${{ github.run_id }}-${{ github.run_attempt }}" \
+            "$TEST_EXIT_CODE"
+      
 
       - name: Final execution status
         if: always()

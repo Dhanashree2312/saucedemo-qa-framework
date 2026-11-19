@@ -118,17 +118,53 @@ jobs:
 
           disable-animations: true
 
+
           script: |
+            echo "Checking Android emulator connection..."
+
+            adb kill-server || true
+            adb start-server
+
+            DEVICE_READY=false
+
+            for attempt in $(seq 1 60); do
+              echo "ADB connection attempt $attempt/60"
+
+              adb reconnect device || true
+
+              if timeout 10 adb wait-for-device; then
+                BOOT_STATUS=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+
+                if [ "$BOOT_STATUS" = "1" ]; then
+                  DEVICE_READY=true
+                  break
+                fi
+              fi
+
+              sleep 5
+            done
+
+            if [ "$DEVICE_READY" != "true" ]; then
+              echo "Android emulator did not become ready."
+              adb devices -l || true
+              exit 1
+            fi
+
+            echo "Android emulator is fully booted."
+            adb devices -l
+
             echo "Starting Appium server..."
             appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 &
 
             echo "Waiting for Appium server..."
-            curl --retry 30 --retry-delay 2 --retry-connrefused --max-time 5 -fsS http://127.0.0.1:4723/status
+            curl --retry 30 --retry-delay 2 --retry-connrefused \
+              --max-time 5 -fsS http://127.0.0.1:4723/status
 
             echo "Appium server is ready."
             echo "Test data source: $TESTDATA_SOURCE"
 
             mvn -B clean test "-Dtestdata.source=$TESTDATA_SOURCE"
+      
 
       # --------------------------------------------------
       # 9. Generate Allure HTML report

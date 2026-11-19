@@ -27,7 +27,6 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
 
     steps:
-
       # --------------------------------------------------
       # 1. Checkout source code
       # --------------------------------------------------
@@ -53,7 +52,7 @@ jobs:
           node-version: '22'
 
       # --------------------------------------------------
-      # 4. Install Playwright browsers and dependencies
+      # 4. Install Playwright browsers
       # --------------------------------------------------
       - name: Install Playwright browsers and Linux dependencies
         run: |
@@ -100,7 +99,6 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-
           emulator-boot-timeout: 1200
           cores: 2
           ram-size: 2048M
@@ -117,41 +115,67 @@ jobs:
 
           disable-animations: true
 
-          # IMPORTANT:
-          # Keep this as ONE folded command.
-          # The emulator action executes script lines separately.
-          script: >-
-            bash -c 'set -e;
-            echo "Checking Android emulator connection...";
-            adb kill-server || true;
-            adb start-server;
-            DEVICE_READY=false;
+          script: |
+            set -e
+
+            echo "========================================"
+            echo "Checking Android emulator connection"
+            echo "========================================"
+
+            adb devices -l
+
+            DEVICE_READY=false
+
             for attempt in $(seq 1 60); do
-              echo "ADB connection attempt $attempt/60";
-              adb reconnect device || true;
+              echo "ADB connection attempt $attempt/60"
+
               if timeout 10 adb wait-for-device; then
-                BOOT_STATUS=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" || true);
+                BOOT_STATUS=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+
                 if [ "$BOOT_STATUS" = "1" ]; then
-                  DEVICE_READY=true;
-                  break;
-                fi;
-              fi;
-              sleep 5;
-            done;
+                  DEVICE_READY=true
+                  break
+                fi
+              fi
+
+              sleep 5
+            done
+
             if [ "$DEVICE_READY" != "true" ]; then
-              echo "Android emulator did not become ready.";
-              adb devices -l || true;
-              exit 1;
-            fi;
-            echo "Android emulator is fully booted.";
-            adb devices -l;
-            echo "Starting Appium server...";
+              echo "ERROR: Android emulator did not become ready."
+              adb devices -l || true
+              exit 1
+            fi
+
+            echo "Android emulator is fully booted."
+            adb devices -l
+
+            echo "========================================"
+            echo "Starting Appium server"
+            echo "========================================"
+
             nohup appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 < /dev/null &
-            echo "Waiting for Appium server...";
-            curl --retry 30 --retry-delay 2 --retry-connrefused --max-time 5 -fsS http://127.0.0.1:4723/status;
-            echo "Appium server is ready.";
-            echo "Test data source: $TESTDATA_SOURCE";
-            mvn -B clean test "-Dtestdata.source=$TESTDATA_SOURCE"'
+
+            echo "Waiting for Appium server..."
+
+            curl \
+              --retry 30 \
+              --retry-delay 2 \
+              --retry-connrefused \
+              --max-time 5 \
+              -fsS \
+              http://127.0.0.1:4723/status
+
+            echo ""
+            echo "Appium server is ready."
+
+            echo "========================================"
+            echo "Starting complete QA test suite"
+            echo "========================================"
+
+            echo "Test data source: $TESTDATA_SOURCE"
+
+            mvn -B clean test "-Dtestdata.source=$TESTDATA_SOURCE"
 
       # --------------------------------------------------
       # 9. Generate Allure HTML report

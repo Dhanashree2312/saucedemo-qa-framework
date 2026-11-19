@@ -28,7 +28,6 @@ public class S3StorageService {
                 .build();
     }
 
-    // Download one file from S3
     public static Path downloadFile(String objectKey, Path destination)
             throws IOException {
 
@@ -36,67 +35,88 @@ public class S3StorageService {
             Files.createDirectories(destination.getParent());
         }
 
-        // Remove an existing file before downloading
         Files.deleteIfExists(destination);
 
-        try (S3Client s3Client = createClient()) {
-
+        try (S3Client client = createClient()) {
             GetObjectRequest request = GetObjectRequest.builder()
                     .bucket(BUCKET_NAME)
                     .key(objectKey)
                     .build();
 
-            s3Client.getObject(
-                    request,
-                    ResponseTransformer.toFile(destination)
-            );
+            client.getObject(request, ResponseTransformer.toFile(destination));
         }
 
-        System.out.println("Downloaded from S3: " + destination);
         return destination;
     }
 
-    // Upload one file to S3
     public static void uploadFile(Path file, String objectKey) {
-
-        try (S3Client s3Client = createClient()) {
-
-            PutObjectRequest request = PutObjectRequest.builder()
-                    .bucket(BUCKET_NAME)
-                    .key(objectKey)
-                    .build();
-
-            s3Client.putObject(
-                    request,
-                    RequestBody.fromFile(file)
-            );
+        try (S3Client client = createClient()) {
+            uploadFile(client, file, objectKey);
         }
-
-        System.out.println("Uploaded to S3: " + objectKey);
     }
 
-    // Upload all files inside a directory
+    private static void uploadFile(
+            S3Client client, Path file, String objectKey) {
+
+        String contentType = getContentType(file);
+
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(objectKey)
+                .contentType(contentType)
+                .build();
+
+        client.putObject(request, RequestBody.fromFile(file));
+
+        System.out.println("Uploaded: " + objectKey);
+    }
+
     public static void uploadDirectory(Path directory, String s3Prefix)
             throws IOException {
 
-        if (!Files.exists(directory)) {
+        if (!Files.isDirectory(directory)) {
             throw new IOException("Directory not found: " + directory);
         }
 
-        try (Stream<Path> files = Files.walk(directory)) {
+        try (S3Client client = createClient();
+             Stream<Path> files = Files.walk(directory)) {
 
             files.filter(Files::isRegularFile)
                     .forEach(file -> {
-
-                        String relativePath = directory
-                                .relativize(file)
+                        String relativePath = directory.relativize(file)
                                 .toString()
                                 .replace("\\", "/");
 
                         String objectKey = s3Prefix + "/" + relativePath;
 
-                        uploadFile(file, objectKey);
+                        uploadFile(client, file, objectKey);
                     });
+        }
+    }
+
+    private static String getContentType(Path file) {
+        String name = file.getFileName().toString().toLowerCase();
+
+        if (name.endsWith(".html")) return "text/html";
+        if (name.endsWith(".js")) return "application/javascript";
+        if (name.endsWith(".css")) return "text/css";
+        if (name.endsWith(".json")) return "application/json";
+        if (name.endsWith(".xml")) return "application/xml";
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".svg")) return "image/svg+xml";
+        if (name.endsWith(".gif")) return "image/gif";
+        if (name.endsWith(".webp")) return "image/webp";
+        if (name.endsWith(".txt") || name.endsWith(".log")) return "text/plain";
+        if (name.endsWith(".woff")) return "font/woff";
+        if (name.endsWith(".woff2")) return "font/woff2";
+        if (name.endsWith(".ttf")) return "font/ttf";
+
+        try {
+            String detected = Files.probeContentType(file);
+            return detected != null ? detected : "application/octet-stream";
+        } catch (IOException e) {
+            return "application/octet-stream";
         }
     }
 }

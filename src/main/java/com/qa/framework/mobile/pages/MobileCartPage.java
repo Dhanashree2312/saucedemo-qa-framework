@@ -86,4 +86,14 @@ public class MobileCartPage {
                 ExpectedConditions.elementToBeClickable(checkoutButton)
         ).click();
     }
+
+    public void waitForCartItems() {
+        wait.until(
+                ExpectedConditions.visibilityOfElementLocated(pageTitle)
+        );
+
+        wait.until(
+                ExpectedConditions.visibilityOfElementLocated(cartItems)
+        );
+    }
 }

@@ -6,7 +6,10 @@ import com.google.gson.JsonParser;
 import com.microsoft.playwright.APIResponse;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+import com.qa.tests.reporting.ApiReportingListener;
+import org.testng.annotations.Listeners;
 
+@Listeners(ApiReportingListener.class)
 public class AuthApiTest extends BaseApiTest {
 
     private JsonObject getValidCredentials() {

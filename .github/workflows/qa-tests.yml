@@ -1,4 +1,3 @@
-
 name: SauceDemo QA Automation
 
 on:
@@ -20,7 +19,7 @@ jobs:
   complete-qa-suite:
     name: Complete Web API and Mobile QA Suite
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     env:
       TESTDATA_SOURCE: ${{ github.event_name == 'pull_request' && 'local' || 's3' }}
@@ -51,8 +50,8 @@ jobs:
       - name: Install Appium and UiAutomator2
         run: |
           npm install --global appium@3.9.0
-          appium driver install uiautomator2
           appium --version
+          appium driver install uiautomator2
           appium driver list --installed
 
       - name: Configure AWS credentials
@@ -64,11 +63,42 @@ jobs:
 
       - name: Verify AWS identity
         if: github.event_name != 'pull_request'
-        run: |
-          aws sts get-caller-identity
+        run: aws sts get-caller-identity
 
-      - name: Run complete QA suite on Android emulator
-        id: run-tests
+      - name: Prepare project and uploader classpath
+        run: |
+          mvn -B clean test-compile dependency:build-classpath \
+            -Dmdep.outputFile=target/runtime-classpath.txt
+
+      # ---------------- WEB ----------------
+
+      - name: Run Web automation suite
+        id: web-tests
+        continue-on-error: true
+        run: |
+          mvn -B test \
+            "-Dtestng.suiteXmlFile=testng.xml" \
+            "-Dallure.results.directory=allure-results/web" \
+            "-Dtestdata.source=$TESTDATA_SOURCE" \
+            "-Denv=qa"
+
+      # ---------------- API ----------------
+
+      - name: Run API automation suite
+        id: api-tests
+        continue-on-error: true
+        run: |
+          mvn -B test \
+            "-Dtestng.suiteXmlFile=testng-api.xml" \
+            "-Dallure.results.directory=allure-results/api" \
+            "-Dtestdata.source=$TESTDATA_SOURCE" \
+            "-Denv=qa"
+
+      # ---------------- MOBILE ----------------
+
+      - name: Run Mobile automation suite on Android emulator
+        id: mobile-tests
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -88,47 +118,76 @@ jobs:
             -camera-back none
             -camera-front none
           disable-animations: true
-
-          # IMPORTANT:
-          # The action executes script lines separately.
-          # Keep EVERY command below on one line.
           script: |
             echo "Checking Android emulator connection"
             adb devices -l
             adb wait-for-device
             test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
             echo "Android emulator is ready"
-            adb devices -l
-            echo "Starting Appium server"
             nohup appium --address 127.0.0.1 --port 4723 > appium.log 2>&1 < /dev/null &
-            echo "Waiting for Appium server"
             curl --retry 30 --retry-delay 2 --retry-connrefused --max-time 5 -fsS http://127.0.0.1:4723/status
-            echo "Appium server is ready"
-            echo "Starting complete QA test suite"
-            echo "Test data source: $TESTDATA_SOURCE"
-            mvn -B clean test "-Dtestdata.source=$TESTDATA_SOURCE"
+            mvn -B test "-Dtestng.suiteXmlFile=testng-mobile.xml" "-Dallure.results.directory=allure-results/mobile" "-Dtestdata.source=$TESTDATA_SOURCE" "-Denv=qa"
 
-      - name: Generate Allure HTML report
-        id: allure-report
+      # ---------------- ALLURE REPORTS ----------------
+
+      - name: Generate Web Allure report
+        id: web-report
         if: always()
+        continue-on-error: true
         run: |
-          mvn -B -q allure:report
+          mvn -B -q allure:report \
+            "-Dallure.results.directory=allure-results/web" \
+            "-Dallure.report.directory=target/reports/web/allure-report"
 
-      - name: Build uploader runtime classpath
-        id: uploader-classpath
+      - name: Generate API Allure report
+        id: api-report
+        if: always()
+        continue-on-error: true
+        run: |
+          mvn -B -q allure:report \
+            "-Dallure.results.directory=allure-results/api" \
+            "-Dallure.report.directory=target/reports/api/allure-report"
+
+      - name: Generate Mobile Allure report
+        id: mobile-report
+        if: always()
+        continue-on-error: true
+        run: |
+          mvn -B -q allure:report \
+            "-Dallure.results.directory=allure-results/mobile" \
+            "-Dallure.report.directory=target/reports/mobile/allure-report"
+
+      # ---------------- DASHBOARD ----------------
+
+      - name: Generate consolidated reporting dashboard
+        id: dashboard
+        if: always()
+        continue-on-error: true
+        run: |
+          java -cp "target/test-classes:target/classes:$(cat target/runtime-classpath.txt)" \
+            com.qa.tests.reporting.ReportingDashboardGenerator
+
+      # ---------------- S3 UPLOAD ----------------
+
+      - name: Upload complete reporting bundle to S3
+        id: s3-upload
         if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
         run: |
-          mvn -B -q -DskipTests test-compile dependency:build-classpath -Dmdep.outputFile=target/runtime-classpath.txt
+          TEST_STATUS="0"
 
-      - name: Upload execution artifacts to S3
-        if: always() && github.event_name != 'pull_request' && steps.uploader-classpath.outcome == 'success'
-        run: |
-          TEST_STATUS="${{ steps.run-tests.outcome == 'success' && '0' || '1' }}"
+          if [[ "${{ steps.web-tests.outcome }}" != "success" ]] || \
+             [[ "${{ steps.api-tests.outcome }}" != "success" ]] || \
+             [[ "${{ steps.mobile-tests.outcome }}" != "success" ]]; then
+            TEST_STATUS="1"
+          fi
 
           java -cp "target/test-classes:target/classes:$(cat target/runtime-classpath.txt)" \
             com.qa.tests.reporting.CloudArtifactUploader \
             "${{ github.run_id }}-${{ github.run_attempt }}" \
             "$TEST_STATUS"
+
+      # ---------------- GITHUB ARTIFACTS ----------------
 
       - name: Upload GitHub execution artifacts
         if: always()
@@ -136,27 +195,49 @@ jobs:
         with:
           name: saucedemo-qa-execution-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            target/reports/
             target/allure-results/
-            target/site/allure-maven-plugin/
             target/surefire-reports/
+            logs/automation.log
             appium.log
           if-no-files-found: warn
           retention-days: 7
 
+      # ---------------- FINAL VALIDATION ----------------
+
       - name: Validate final execution status
         if: always()
         run: |
-          echo "Test execution status: ${{ steps.run-tests.outcome }}"
-          echo "Allure report status: ${{ steps.allure-report.outcome }}"
+          echo "Web tests: ${{ steps.web-tests.outcome }}"
+          echo "API tests: ${{ steps.api-tests.outcome }}"
+          echo "Mobile tests: ${{ steps.mobile-tests.outcome }}"
 
-          if [[ "${{ steps.run-tests.outcome }}" != "success" ]]; then
-            echo "QA test execution failed."
+          echo "Web Allure: ${{ steps.web-report.outcome }}"
+          echo "API Allure: ${{ steps.api-report.outcome }}"
+          echo "Mobile Allure: ${{ steps.mobile-report.outcome }}"
+
+          echo "Dashboard: ${{ steps.dashboard.outcome }}"
+          echo "S3 upload: ${{ steps.s3-upload.outcome }}"
+
+          if [[ "${{ steps.web-tests.outcome }}" != "success" ]] || \
+             [[ "${{ steps.api-tests.outcome }}" != "success" ]] || \
+             [[ "${{ steps.mobile-tests.outcome }}" != "success" ]]; then
+            echo "One or more QA test suites failed."
             exit 1
           fi
 
-          if [[ "${{ steps.allure-report.outcome }}" != "success" ]]; then
-            echo "Allure report generation failed."
+          if [[ "${{ steps.web-report.outcome }}" != "success" ]] || \
+             [[ "${{ steps.api-report.outcome }}" != "success" ]] || \
+             [[ "${{ steps.mobile-report.outcome }}" != "success" ]] || \
+             [[ "${{ steps.dashboard.outcome }}" != "success" ]]; then
+            echo "One or more reporting steps failed."
             exit 1
           fi
 
-          echo "Complete QA execution and Allure report generation succeeded."
+          if [[ "${{ github.event_name }}" != "pull_request" ]] && \
+             [[ "${{ steps.s3-upload.outcome }}" != "success" ]]; then
+            echo "S3 reporting upload failed."
+            exit 1
+          fi
+
+          echo "All test and reporting validations succeeded."

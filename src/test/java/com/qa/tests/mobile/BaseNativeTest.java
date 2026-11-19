@@ -1,3 +1,4 @@
+
 package com.qa.tests.mobile;
 
 import com.qa.framework.mobile.driver.NativeAndroidDriverFactory;
@@ -15,6 +16,10 @@ public class BaseNativeTest {
         driver = NativeAndroidDriverFactory.createDriver();
 
         System.out.println("Native Android app launched.");
+    }
+
+    public AndroidDriver getDriver() {
+        return driver;
     }
 
     @AfterMethod(alwaysRun = true)

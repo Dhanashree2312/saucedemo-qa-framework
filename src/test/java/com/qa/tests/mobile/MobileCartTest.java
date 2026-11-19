@@ -26,6 +26,7 @@ public class MobileCartTest extends BaseMobileTest {
         inventoryPage.openCart();
 
         cartPage = new MobileCartPage(driver);
+        cartPage.waitForCartItems();
     }
 
     @Test

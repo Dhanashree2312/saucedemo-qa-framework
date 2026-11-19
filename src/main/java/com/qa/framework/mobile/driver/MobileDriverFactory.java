@@ -35,7 +35,9 @@ public class MobileDriverFactory {
                 ConfigManager.getProperty("mobile.browserName")
         );
 
+
         options.setNewCommandTimeout(Duration.ofSeconds(60));
+        options.setCapability("appium:adbExecTimeout", 60000);
 
         String serverUrl =
                 ConfigManager.getProperty("mobile.appiumServerUrl");

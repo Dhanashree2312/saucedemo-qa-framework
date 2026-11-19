@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
@@ -6,64 +6,98 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.example</groupId>
+    <groupId>com.qa</groupId>
     <artifactId>saucedemo-qa-framework</artifactId>
     <version>1.0-SNAPSHOT</version>
 
-    <!-- ================= PROPERTIES ================= -->
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <!-- Appium and Selenium versions -->
+        <playwright.version>1.55.0</playwright.version>
         <appium.version>10.1.1</appium.version>
         <selenium.version>4.49.0</selenium.version>
+        <testng.version>7.11.0</testng.version>
+        <allure.testng.version>2.29.1</allure.testng.version>
+        <gson.version>2.13.2</gson.version>
+        <poi.version>5.4.1</poi.version>
+        <aws.sdk.version>2.57.8</aws.sdk.version>
+
+        <!-- Default suite; can be overridden for platform-specific runs -->
+        <testng.suiteXmlFile>testng-all.xml</testng.suiteXmlFile>
+
+        <!-- Allure results and report directories -->
+        <allure.results.directory>allure-results</allure.results.directory>
+        <allure.report.directory>
+            ${project.build.directory}/reports/allure-report
+        </allure.report.directory>
+
+        <testdata.source>local</testdata.source>
+        <env>qa</env>
     </properties>
 
-    <!-- ================= DEPENDENCIES ================= -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
 
-        <!-- TestNG -->
-        <dependency>
-            <groupId>org.testng</groupId>
-            <artifactId>testng</artifactId>
-            <version>7.11.0</version>
-        </dependency>
-
-        <!-- Playwright Web Automation -->
+        <!-- Playwright UI and API automation -->
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
-            <version>1.55.0</version>
+            <version>${playwright.version}</version>
         </dependency>
 
-        <!-- Appium Mobile Automation -->
+        <!-- Appium mobile automation -->
         <dependency>
             <groupId>io.appium</groupId>
             <artifactId>java-client</artifactId>
             <version>${appium.version}</version>
         </dependency>
 
-        <!-- Selenium support required for Appium -->
+        <!-- Selenium dependency used by Appium -->
         <dependency>
             <groupId>org.seleniumhq.selenium</groupId>
             <artifactId>selenium-java</artifactId>
             <version>${selenium.version}</version>
         </dependency>
 
-        <!-- Allure TestNG Reporting -->
+        <!-- TestNG -->
+        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <version>${testng.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Allure reporting -->
         <dependency>
             <groupId>io.qameta.allure</groupId>
             <artifactId>allure-testng</artifactId>
-            <version>2.29.1</version>
+            <version>${allure.testng.version}</version>
         </dependency>
 
-        <!-- Gson -->
+        <!-- JSON processing -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.13.2</version>
+            <version>${gson.version}</version>
+        </dependency>
+
+        <!-- Excel test data -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
 
         <!-- AWS S3 -->
@@ -72,33 +106,22 @@
             <artifactId>s3</artifactId>
         </dependency>
 
-        <!-- Excel Test Data -->
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi-ooxml</artifactId>
-            <version>5.4.1</version>
-        </dependency>
-
     </dependencies>
 
-    <!-- ================= DEPENDENCY MANAGEMENT ================= -->
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>software.amazon.awssdk</groupId>
-                <artifactId>bom</artifactId>
-                <version>2.57.8</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
-    <!-- ================= BUILD ================= -->
     <build>
         <plugins>
 
-            <!-- Maven Surefire: TestNG Execution -->
+            <!-- Java compiler -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+
+            <!-- TestNG execution -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -106,30 +129,66 @@
 
                 <configuration>
                     <suiteXmlFiles>
-                        <suiteXmlFile>testng.xml</suiteXmlFile>
+                        <suiteXmlFile>${testng.suiteXmlFile}</suiteXmlFile>
                     </suiteXmlFiles>
 
                     <systemPropertyVariables>
-                        <!-- Allure results directory -->
                         <allure.results.directory>
-                            ${project.build.directory}/allure-results
+                            ${project.build.directory}/${allure.results.directory}
                         </allure.results.directory>
 
-                        <!-- Java logging configuration -->
-                        <java.util.logging.config.file>
-                            ${project.basedir}/src/main/resources/logging.properties
-                        </java.util.logging.config.file>
+                        <testdata.source>${testdata.source}</testdata.source>
+                        <env>${env}</env>
                     </systemPropertyVariables>
+
+                    <useSystemClassLoader>true</useSystemClassLoader>
+                    <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
                 </configuration>
             </plugin>
 
-            <!-- Allure Report Generation -->
+            <!-- Allure HTML report generation -->
             <plugin>
                 <groupId>io.qameta.allure</groupId>
                 <artifactId>allure-maven</artifactId>
                 <version>3.1.0</version>
+
+                <configuration>
+                    <reportVersion>3.17.0</reportVersion>
+
+                    <resultsDirectory>
+                        ${allure.results.directory}
+                    </resultsDirectory>
+
+                    <reportDirectory>
+                        ${allure.report.directory}
+                    </reportDirectory>
+
+                    <singleFile>true</singleFile>
+                    <reportTimeout>300</reportTimeout>
+                </configuration>
+
+                <executions>
+                    <execution>
+                        <id>generate-allure-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
+            <!-- Existing framework execution support -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+            </plugin>
         </plugins>
     </build>
 

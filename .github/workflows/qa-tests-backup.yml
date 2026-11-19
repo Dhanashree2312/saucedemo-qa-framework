@@ -1,0 +1,169 @@
+
+name: SauceDemo QA Automation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+
+  # ==========================================
+  # UI AUTOMATION JOB
+  # ==========================================
+  ui-tests:
+    name: Run UI Automation Tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Install all browser engines and Linux dependencies
+      - name: Install Playwright browser dependencies
+        run: >
+          mvn exec:java
+          -Dexec.mainClass=com.microsoft.playwright.CLI
+          -Dexec.args="install --with-deps chromium firefox webkit"
+
+      - name: Prepare log directory
+        run: mkdir -p logs
+
+      # AWS authentication using GitHub OIDC
+      - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # Pull requests use local test data
+      - name: Run UI tests with local test data
+        if: github.event_name == 'pull_request'
+        run: mvn clean test
+
+      # Main branch and manual runs use S3 test data
+      - name: Run UI tests with S3 test data
+        if: github.event_name != 'pull_request'
+        run: mvn clean test "-Dtestdata.source=s3"
+
+      # Generate Allure HTML report
+      - name: Generate UI Allure HTML report
+        if: always()
+        run: mvn allure:report
+
+      # Upload historical UI report and results
+      - name: Upload UI reports to S3
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          REPORT_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/${{ github.run_id }}/${{ github.run_attempt }}/ui"
+          LATEST_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/latest/ui"
+
+          if [ -f target/site/allure-maven-plugin/index.html ]; then
+            aws s3 sync target/site/allure-maven-plugin/ \
+              "$REPORT_PATH/html/" \
+              --no-progress
+
+            aws s3 sync target/site/allure-maven-plugin/ \
+              "$LATEST_PATH/html/" \
+              --delete \
+              --no-progress
+          else
+            echo "UI Allure HTML report was not generated."
+          fi
+
+          if [ -d target/allure-results ]; then
+            aws s3 sync target/allure-results/ \
+              "$REPORT_PATH/allure-results/" \
+              --no-progress
+
+            aws s3 sync target/allure-results/ \
+              "$LATEST_PATH/allure-results/" \
+              --delete \
+              --no-progress
+          else
+            echo "UI Allure results directory was not generated."
+          fi
+
+  # ==========================================
+  # API AUTOMATION JOB
+  # ==========================================
+  api-tests:
+    name: Run API Automation Tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Execute API TestNG suite
+      - name: Run API TestNG suite
+        run: mvn clean test "-Dsurefire.suiteXmlFiles=testng-api.xml"
+
+      # Generate API Allure HTML report
+      - name: Generate API Allure HTML report
+        if: always()
+        run: mvn allure:report
+
+      # Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        if: always() && github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # Upload historical API report and results
+      - name: Upload API reports to S3
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          REPORT_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/${{ github.run_id }}/${{ github.run_attempt }}/api"
+          LATEST_PATH="s3://${{ vars.S3_BUCKET }}/saucedemo-reports/latest/api"
+
+          if [ -f target/site/allure-maven-plugin/index.html ]; then
+            aws s3 sync target/site/allure-maven-plugin/ \
+              "$REPORT_PATH/html/" \
+              --no-progress
+
+            aws s3 sync target/site/allure-maven-plugin/ \
+              "$LATEST_PATH/html/" \
+              --delete \
+              --no-progress
+          else
+            echo "API Allure HTML report was not generated."
+          fi
+
+          if [ -d target/allure-results ]; then
+            aws s3 sync target/allure-results/ \
+              "$REPORT_PATH/allure-results/" \
+              --no-progress
+
+            aws s3 sync target/allure-results/ \
+              "$LATEST_PATH/allure-results/" \
+              --delete \
+              --no-progress
+          else
+            echo "API Allure results directory was not generated."
+          fi

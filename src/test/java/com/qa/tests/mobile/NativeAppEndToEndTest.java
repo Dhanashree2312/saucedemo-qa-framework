@@ -4,7 +4,10 @@ import com.qa.framework.mobile.pages.ExpandableListsPage;
 import com.qa.framework.mobile.pages.NativeHomePage;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+import com.qa.tests.reporting.MobileReportingListener;
+import org.testng.annotations.Listeners;
 
+@Listeners(MobileReportingListener.class)
 public class NativeAppEndToEndTest extends BaseNativeTest {
 
     @Test
@@ -53,5 +56,6 @@ public class NativeAppEndToEndTest extends BaseNativeTest {
         System.out.println(
                 "Native Android end-to-end navigation completed successfully."
         );
+
     }
 }

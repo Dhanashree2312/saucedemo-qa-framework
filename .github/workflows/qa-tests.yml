@@ -95,7 +95,14 @@ jobs:
             "-Denv=qa"
 
       # ---------------- MOBILE ----------------
-
+      - name: Check runner resources
+        run: |
+          echo "CPU cores:"
+          nproc
+          echo "Memory:"
+          free -h
+          echo "Disk:"
+          df -h /
       - name: Run Mobile automation suite on Android emulator
         id: mobile-tests
         continue-on-error: true

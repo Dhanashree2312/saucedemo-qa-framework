@@ -1,6 +1,6 @@
-package com.qa.tests.ui.ai;
+package com.qa.tests.web.ai;
 import com.qa.framework.config.ConfigManager;
-import com.qa.tests.ui.BaseTest;
+import com.qa.tests.web.BaseTest;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import com.qa.tests.reporting.FailureScreenshotListener;

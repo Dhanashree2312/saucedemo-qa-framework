@@ -12,7 +12,8 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public class CloudArtifactUploader {
+public class
+CloudArtifactUploader {
 
     private static final Path REPORTS =
             Path.of("target", "reports");

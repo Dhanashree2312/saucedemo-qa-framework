@@ -1,4 +1,4 @@
-package com.qa.tests.ui;
+package com.qa.tests.web;
 
 import com.qa.framework.config.ConfigManager;
 import com.qa.framework.pages.InventoryPage;

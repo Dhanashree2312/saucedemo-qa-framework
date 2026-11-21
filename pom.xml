@@ -1,4 +1,3 @@
-
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
@@ -23,14 +22,45 @@
         <poi.version>5.4.1</poi.version>
         <aws.sdk.version>2.57.8</aws.sdk.version>
 
-        <!-- Default suite; can be overridden for platform-specific runs -->
+        <!-- Allure version retained for API and Mobile reports -->
+        <allure.report.version>3.17.0</allure.report.version>
+
+        <!-- TestNG parent suite -->
         <testng.suiteXmlFile>testng-all.xml</testng.suiteXmlFile>
 
-        <!-- Allure results and report directories -->
-        <allure.results.directory>allure-results</allure.results.directory>
-        <allure.report.directory>
-            ${project.build.directory}/reports/allure-report
-        </allure.report.directory>
+        <!-- Combined raw Allure results -->
+        <allure.results.directory>
+            ${project.build.directory}/allure-results
+        </allure.results.directory>
+
+        <!-- Platform-specific Allure results -->
+        <web.allure.results>
+            ${project.build.directory}/reports/web/allure-results
+        </web.allure.results>
+
+        <api.allure.results>
+            ${project.build.directory}/reports/api/allure-results
+        </api.allure.results>
+
+        <mobile.allure.results>
+            ${project.build.directory}/reports/mobile/allure-results
+        </mobile.allure.results>
+
+        <!-- Platform-specific HTML reports -->
+        <web.allure.report>
+            ${project.build.directory}/reports/web/allure-report
+        </web.allure.report>
+
+        <api.allure.report>
+            ${project.build.directory}/reports/api/allure-report
+        </api.allure.report>
+
+        <mobile.allure.report>
+            ${project.build.directory}/reports/mobile/allure-report
+        </mobile.allure.report>
+
+        <!-- Execution metadata -->
+        <execution.id>local-${maven.build.timestamp}</execution.id>
 
         <testdata.source>local</testdata.source>
         <env>qa</env>
@@ -129,12 +159,14 @@
 
                 <configuration>
                     <suiteXmlFiles>
-                        <suiteXmlFile>${testng.suiteXmlFile}</suiteXmlFile>
+                        <suiteXmlFile>
+                            ${testng.suiteXmlFile}
+                        </suiteXmlFile>
                     </suiteXmlFiles>
 
                     <systemPropertyVariables>
                         <allure.results.directory>
-                            ${project.build.directory}/${allure.results.directory}
+                            ${allure.results.directory}
                         </allure.results.directory>
 
                         <testdata.source>${testdata.source}</testdata.source>
@@ -143,52 +175,149 @@
 
                     <useSystemClassLoader>true</useSystemClassLoader>
                     <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+
+                    <!-- Continue to reporting even when tests fail.
+                         ReportingPipelineFinalizer returns the final
+                         failed build status after upload. -->
+                    <testFailureIgnore>true</testFailureIgnore>
                 </configuration>
             </plugin>
 
-            <!-- Allure HTML report generation -->
+            <!-- Generate independent Web, API and Mobile Allure reports -->
             <plugin>
                 <groupId>io.qameta.allure</groupId>
                 <artifactId>allure-maven</artifactId>
                 <version>3.1.0</version>
 
                 <configuration>
-                    <reportVersion>3.17.0</reportVersion>
-
-                    <resultsDirectory>
-                        ${allure.results.directory}
-                    </resultsDirectory>
-
-                    <reportDirectory>
-                        ${allure.report.directory}
-                    </reportDirectory>
-
-                    <singleFile>true</singleFile>
                     <reportTimeout>300</reportTimeout>
                 </configuration>
 
                 <executions>
+
+                    <!-- Web Allure report: use Allure 2 -->
                     <execution>
-                        <id>generate-allure-report</id>
+                        <id>generate-web-allure-report</id>
                         <phase>verify</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
+                        <configuration>
+                            <reportVersion>2.39.0</reportVersion>
+                            <resultsDirectory>
+                                ${web.allure.results}
+                            </resultsDirectory>
+                            <reportDirectory>
+                                ${web.allure.report}
+                            </reportDirectory>
+                        </configuration>
                     </execution>
+
+                    <!-- API Allure report: retain Allure 3 -->
+                    <execution>
+                        <id>generate-api-allure-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                        <configuration>
+                            <reportVersion>${allure.report.version}</reportVersion>
+                            <resultsDirectory>
+                                ${api.allure.results}
+                            </resultsDirectory>
+                            <reportDirectory>
+                                ${api.allure.report}
+                            </reportDirectory>
+                        </configuration>
+                    </execution>
+
+                    <!-- Mobile Allure report: retain Allure 3 -->
+                    <execution>
+                        <id>generate-mobile-allure-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                        <configuration>
+                            <reportVersion>${allure.report.version}</reportVersion>
+                            <resultsDirectory>
+                                ${mobile.allure.results}
+                            </resultsDirectory>
+                            <reportDirectory>
+                                ${mobile.allure.report}
+                            </reportDirectory>
+                        </configuration>
+                    </execution>
+
                 </executions>
             </plugin>
 
-            <!-- Existing framework execution support -->
+            <!-- Reporting orchestration -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
+
+                <executions>
+
+                    <!-- Step 1: Split combined Allure results -->
+                    <execution>
+                        <id>split-allure-results-by-platform</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>
+                                com.qa.tests.reporting.AllureResultsSplitter
+                            </mainClass>
+                            <classpathScope>test</classpathScope>
+                        </configuration>
+                    </execution>
+
+                    <!-- Step 2: Generate consolidated dashboard -->
+                    <execution>
+                        <id>generate-report-dashboard</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>
+                                com.qa.tests.reporting.ReportingDashboardGenerator
+                            </mainClass>
+                            <classpathScope>test</classpathScope>
+                        </configuration>
+                    </execution>
+
+                    <!-- Step 3: Finalize reporting and upload to S3 -->
+                    <execution>
+                        <id>finalize-and-upload-reporting</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>
+                                com.qa.tests.reporting.ReportingPipelineFinalizer
+                            </mainClass>
+                            <classpathScope>test</classpathScope>
+                            <arguments>
+                                <argument>${execution.id}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+
+                </executions>
             </plugin>
+
+            <!-- Maven dependency support -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <version>3.8.1</version>
             </plugin>
+
         </plugins>
     </build>
 

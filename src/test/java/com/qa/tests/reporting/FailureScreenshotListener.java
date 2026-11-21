@@ -3,7 +3,7 @@ package com.qa.tests.reporting;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
-import com.qa.tests.ui.BaseTest;
+import com.qa.tests.web.BaseTest;
 import com.qa.framework.config.ConfigManager;
 import com.qa.framework.ai.FailureContextCollector;
 import com.qa.framework.ai.model.FailureContext;
@@ -87,7 +87,18 @@ public class FailureScreenshotListener implements
             IInvokedMethod method,
             ITestResult result) {
 
+        // Handle failed TestNG configuration methods separately.
+// Do not count configuration failures as ordinary test executions.
         if (!method.isTestMethod()) {
+
+            if (result.getStatus() == ITestResult.FAILURE
+                    && result.getTestClass() != null
+                    && result.getTestClass().getName()
+                    .startsWith("com.qa.tests.ui.")) {
+
+                attachConfigurationFailure(result);
+            }
+
             return;
         }
 
@@ -441,5 +452,92 @@ public class FailureScreenshotListener implements
                 .filter(test ->
                         status.equals(test.get("status")))
                 .count();
+    }
+
+    private void attachConfigurationFailure(ITestResult result) {
+
+        Throwable exception = result.getThrowable();
+
+        String methodName = result.getMethod().getMethodName();
+
+        String className = result.getTestClass().getName();
+
+        StringWriter writer = new StringWriter();
+
+        if (exception != null) {
+            exception.printStackTrace(new PrintWriter(writer));
+        }
+
+        String stackTrace = writer.toString();
+
+        try {
+            Files.createDirectories(EVIDENCE_DIR);
+
+            String baseName = safeName(className)
+                    + "-"
+                    + safeName(methodName)
+                    + "-configuration-"
+                    + result.getStartMillis();
+
+            Path exceptionFile =
+                    EVIDENCE_DIR.resolve(baseName + ".txt");
+
+            Files.writeString(
+                    exceptionFile,
+                    stackTrace.isBlank()
+                            ? "No stack trace available."
+                            : stackTrace,
+                    StandardCharsets.UTF_8
+            );
+
+            Allure.addAttachment(
+                    "Configuration Failure Exception",
+                    "text/plain",
+                    new ByteArrayInputStream(
+                            stackTrace.getBytes(StandardCharsets.UTF_8)
+                    ),
+                    ".txt"
+            );
+
+            Allure.addAttachment(
+                    "Configuration Failure Details",
+                    "text/plain",
+                    "Method: " + methodName
+                            + "\nClass: " + className
+                            + "\nFailure: "
+                            + (exception != null
+                            ? exception.getMessage()
+                            : "Unknown"),
+                    ".txt"
+            );
+
+            ReportingAttachments.attachExecutionLogs();
+
+            LOGGER.info(
+                    "Configuration failure evidence attached for: "
+                            + className + "." + methodName
+            );
+
+            // Preserve the existing failure-context collection flow.
+            FailureContext context = contextCollector.collect(
+                    className + "." + methodName,
+                    "web",
+                    exception != null ? exception.getMessage() : "",
+                    stackTrace,
+                    "",
+                    "",
+                    Instant.ofEpochMilli(result.getEndMillis()).toString()
+            );
+
+            failureContexts.add(context);
+
+        } catch (Exception e) {
+
+            LOGGER.log(
+                    Level.WARNING,
+                    "Could not attach configuration failure evidence.",
+                    e
+            );
+        }
     }
 }

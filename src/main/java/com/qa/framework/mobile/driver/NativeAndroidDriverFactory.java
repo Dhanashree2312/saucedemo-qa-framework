@@ -42,7 +42,7 @@ public class NativeAndroidDriverFactory {
 
         options.setApp(app.getAbsolutePath());
         options.setNewCommandTimeout(Duration.ofSeconds(60));
-        options.setCapability("appium:adbExecTimeout", 60000);
+        options.setCapability("appium:adbExecTimeout", 90000);
 
         String serverUrl =
                 ConfigManager.getProperty("mobile.appiumServerUrl");

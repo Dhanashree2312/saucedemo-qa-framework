@@ -35,12 +35,23 @@ public class MobileDriverFactory {
                 ConfigManager.getProperty("mobile.browserName")
         );
 
-
+        // Maximum time Appium waits for commands.
         options.setNewCommandTimeout(Duration.ofSeconds(60));
+
+        // Maximum time allowed for ADB commands.
         options.setCapability("appium:adbExecTimeout", 60000);
+
+        // Maximum time allowed to install the UiAutomator2 server APK.
+        options.setCapability(
+                "appium:uiautomator2ServerInstallTimeout",
+                90000
+        );
 
         String serverUrl =
                 ConfigManager.getProperty("mobile.appiumServerUrl");
+
+        System.out.println("Starting Android browser session...");
+        System.out.println("UiAutomator2 server installation timeout: 90 seconds");
 
         return new AndroidDriver(
                 URI.create(serverUrl).toURL(),

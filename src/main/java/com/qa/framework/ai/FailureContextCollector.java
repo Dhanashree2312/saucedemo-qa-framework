@@ -11,6 +11,8 @@ public class FailureContextCollector {
 
     private static final String EXECUTION_ID = resolveExecutionId();
 
+    private final LogSanitizer logSanitizer = new LogSanitizer();
+
     public FailureContext collect(
             String testName,
             String platform,
@@ -25,10 +27,14 @@ public class FailureContextCollector {
                 normalize(testName),
                 normalize(platform),
                 ConfigManager.getEnvironment(),
-                normalize(failureMessage),
-                normalize(stackTrace),
-                normalize(logs),
+
+                // Sanitize sensitive information before storing failure details.
+                logSanitizer.sanitize(normalize(failureMessage)),
+                logSanitizer.sanitize(normalize(stackTrace)),
+                logSanitizer.sanitize(normalize(logs)),
+
                 normalize(screenshotPath),
+
                 timestamp == null || timestamp.isBlank()
                         ? Instant.now().toString()
                         : timestamp
@@ -36,7 +42,6 @@ public class FailureContextCollector {
     }
 
     private static String resolveExecutionId() {
-
         String executionId = System.getProperty("execution.id");
 
         if (executionId != null && !executionId.isBlank()) {
@@ -48,8 +53,8 @@ public class FailureContextCollector {
         if (githubRunId != null && !githubRunId.isBlank()) {
             String attempt = System.getenv("GITHUB_RUN_ATTEMPT");
 
-            return githubRunId + "-" +
-                    (attempt != null ? attempt : "1");
+            return githubRunId + "-"
+                    + (attempt != null ? attempt : "1");
         }
 
         return UUID.randomUUID().toString();

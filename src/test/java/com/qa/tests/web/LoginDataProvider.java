@@ -1,5 +1,5 @@
 
-package com.qa.tests.ui;
+package com.qa.tests.web;
 
 import com.qa.framework.data.TestDataManager;
 import org.testng.annotations.DataProvider;

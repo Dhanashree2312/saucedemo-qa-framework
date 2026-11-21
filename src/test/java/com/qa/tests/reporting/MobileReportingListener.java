@@ -1,3 +1,4 @@
+
 package com.qa.tests.reporting;
 
 import com.google.gson.Gson;
@@ -38,7 +39,11 @@ public class MobileReportingListener implements
         IConfigurationListener {
 
     private static final Logger LOGGER =
-            Logger.getLogger(MobileReportingListener.class.getName());
+            Logger.getLogger(
+                    MobileReportingListener.class.getName());
+
+    private static final String MOBILE_PACKAGE =
+            "com.qa.tests.mobile.";
 
     private static final List<Map<String, Object>> TEST_RECORDS =
             new CopyOnWriteArrayList<>();
@@ -90,9 +95,14 @@ public class MobileReportingListener implements
             return;
         }
 
-        String status = getStatus(result);
-
         String className = result.getTestClass().getName();
+
+        // Record mobile tests only.
+        if (!className.startsWith(MOBILE_PACKAGE)) {
+            return;
+        }
+
+        String status = getStatus(result);
         String methodName = result.getMethod().getMethodName();
 
         Map<String, Object> record =
@@ -255,7 +265,6 @@ public class MobileReportingListener implements
 
             /*
              * Attach the existing framework execution log to Allure.
-             * This does not invoke or modify the GenAI log analyser.
              */
             ReportingAttachments.attachExecutionLogs();
 
@@ -292,14 +301,19 @@ public class MobileReportingListener implements
     @Override
     public void onConfigurationFailure(ITestResult result) {
 
+        String className = result.getTestClass() != null
+                ? result.getTestClass().getName()
+                : "unknown";
+
+        // Record configuration failures from mobile classes only.
+        if (!className.startsWith(MOBILE_PACKAGE)) {
+            return;
+        }
+
         Throwable exception = result.getThrowable();
 
         Map<String, Object> record =
                 new LinkedHashMap<>();
-
-        String className = result.getTestClass() != null
-                ? result.getTestClass().getName()
-                : "unknown";
 
         String methodName = result.getMethod() != null
                 ? result.getMethod().getMethodName()
@@ -393,13 +407,12 @@ public class MobileReportingListener implements
         try {
             Files.createDirectories(REPORT_DIR);
 
-            int total = TEST_RECORDS.size();
-
             long passed = count("PASSED");
             long failed = count("FAILED");
             long skipped = count("SKIPPED");
 
-            long executed = total - skipped;
+            long total = passed + failed + skipped;
+            long executed = passed + failed;
 
             double passRate = executed == 0
                     ? 0.0

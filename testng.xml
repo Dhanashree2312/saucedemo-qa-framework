@@ -2,18 +2,17 @@
 
 <suite name="SauceDemo QA Suite" verbose="2">
     <listeners>
-        <listener class-name="com.qa.tests.reporting.FailureScreenshotListener"/>
+        <listener class-name="com.qa.tests.reporting.WebReportingListener"/>
     </listeners>
-
     <test name="Smoke - Chromium">
         <parameter name="browser" value="chromium"/>
         <groups>
             <run><include name="smoke"/></run>
         </groups>
         <classes>
-            <class name="com.qa.tests.ui.LoginTest"/>
-            <class name="com.qa.tests.ui.InventoryTest"/>
-            <class name="com.qa.tests.ui.CartTest"/>
+            <class name="com.qa.tests.web.LoginTest"/>
+            <class name="com.qa.tests.web.InventoryTest"/>
+            <class name="com.qa.tests.web.CartTest"/>
         </classes>
     </test>
 
@@ -23,9 +22,9 @@
             <run><include name="smoke"/></run>
         </groups>
         <classes>
-            <class name="com.qa.tests.ui.LoginTest"/>
-            <class name="com.qa.tests.ui.InventoryTest"/>
-            <class name="com.qa.tests.ui.CartTest"/>
+            <class name="com.qa.tests.web.LoginTest"/>
+            <class name="com.qa.tests.web.InventoryTest"/>
+            <class name="com.qa.tests.web.CartTest"/>
         </classes>
     </test>
 
@@ -35,19 +34,19 @@
             <run><include name="smoke"/></run>
         </groups>
         <classes>
-            <class name="com.qa.tests.ui.LoginTest"/>
-            <class name="com.qa.tests.ui.InventoryTest"/>
-            <class name="com.qa.tests.ui.CartTest"/>
+            <class name="com.qa.tests.web.LoginTest"/>
+            <class name="com.qa.tests.web.InventoryTest"/>
+            <class name="com.qa.tests.web.CartTest"/>
         </classes>
     </test>
 
     <test name="Sanity - Chromium">
         <parameter name="browser" value="chromium"/>
         <classes>
-            <class name="com.qa.tests.ui.InventoryTest">
+            <class name="com.qa.tests.web.InventoryTest">
                 <methods><include name="inventoryTest"/></methods>
             </class>
-            <class name="com.qa.tests.ui.CartTest">
+            <class name="com.qa.tests.web.CartTest">
                 <methods><include name="addProductToCart"/></methods>
             </class>
         </classes>
@@ -56,7 +55,7 @@
     <test name="Sanity - Firefox">
         <parameter name="browser" value="firefox"/>
         <classes>
-            <class name="com.qa.tests.ui.InventoryTest">
+            <class name="com.qa.tests.web.InventoryTest">
                 <methods><include name="verifyProductSorting"/></methods>
             </class>
         </classes>
@@ -65,7 +64,7 @@
     <test name="Sanity - WebKit">
         <parameter name="browser" value="webkit"/>
         <classes>
-            <class name="com.qa.tests.ui.CartTest">
+            <class name="com.qa.tests.web.CartTest">
                 <methods><include name="addMultipleProductsToCart"/></methods>
             </class>
         </classes>

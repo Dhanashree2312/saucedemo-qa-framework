@@ -1,4 +1,4 @@
-package com.qa.tests.ui.ai;
+package com.qa.tests.web.ai;
 
 import com.qa.framework.ai.AIClient;
 import org.testng.Assert;
